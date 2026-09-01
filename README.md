@@ -93,12 +93,12 @@ MONGO_URI=mongodb://localhost:27018/cafe?replicaSet=rs0
 
 | المتغيّر | القيمة | إجباري |
 |---|---|:---:|
-| `JWT_SECRET` | نص عشوائي طويل — **غيّره** | ✅ |
-| `NODE_ENV` | `production` | ✅ |
+| `JWT_SECRET` | نص عشوائي 32 حرف على الأقل — **إجباري** | ✅ |
+| `NODE_ENV` | Vercel بيظبطه `production` لوحده — **ماتضفهوش** | ➖ |
 | `TZ_NAME` | `Africa/Cairo` | ➖ |
 | `JWT_HOURS` | `12` | ➖ |
 | `BLOCK_WHEN_OUT_OF_STOCK` | `false` | ➖ |
-| `VITE_CURRENCY` | `EGP` | ➖ |
+| `VITE_CURRENCY` | `EGP` — لازم يتظبط **قبل** البناء لأنه بيتحقن في الواجهة | ➖ |
 | `MONGO_URI` | **مش محتاجه** لو ربطت Atlas من Marketplace | ➖ |
 
 لتوليد `JWT_SECRET`:
