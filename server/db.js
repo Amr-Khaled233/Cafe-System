@@ -22,6 +22,26 @@ export function mongoUri() {
   );
 }
 
+/**
+ * اسم القاعدة اللي هنشتغل عليها.
+ *
+ * الرابط اللي بييجي من تكامل MongoDB Atlas على Vercel بينتهي بـ "/?" — يعني
+ * من غير اسم قاعدة. لو سبناه كده، الدرايفر بيروح على قاعدة اسمها "test"،
+ * والـ seed اللي شغّلته بإيدك على قاعدة تانية مايبانش في التطبيق.
+ * فبنرجع لاسم افتراضي بس لما الرابط ما يحددش واحد.
+ */
+export function resolveDbName(uri) {
+  try {
+    // بنشيل البروتوكول عشان URL يعرف يقرا mongodb+srv
+    const path = new URL(uri.replace(/^mongodb(\+srv)?:\/\//, 'http://')).pathname;
+    const name = path.replace(/^\//, '');
+    if (name) return null; // الرابط محدد القاعدة — مانتدخلش
+  } catch {
+    /* رابط غريب — بنكمّل بالافتراضي */
+  }
+  return process.env.MONGO_DB || 'cafe';
+}
+
 export async function connectDB() {
   if (cached.conn) return cached.conn;
 
@@ -30,8 +50,13 @@ export async function connectDB() {
 
   if (!cached.promise) {
     mongoose.set('strictQuery', true);
+    const dbName = resolveDbName(uri);
     cached.promise = mongoose
-      .connect(uri, { maxPoolSize: 10, serverSelectionTimeoutMS: 10000 })
+      .connect(uri, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 10000,
+        ...(dbName ? { dbName } : {}),
+      })
       .then((m) => m);
   }
   cached.conn = await cached.promise;
