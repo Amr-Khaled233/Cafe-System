@@ -61,6 +61,7 @@ MONGO_URI=mongodb://localhost:27018/cafe?replicaSet=rs0
 | `npm run dev` | الـ API والواجهة مع بعض |
 | `npm run dev:api` | الـ API بس |
 | `npm run dev:web` | الواجهة بس |
+| `npm run db:check` | بيقولك انت متصل بأنهي قاعدة وفيها إيه — **شغّله قبل أي seed** |
 | `npm run seed` | بيانات تجريبية (لو القاعدة فاضية) |
 | `npm run seed:reset` | بيمسح كل حاجة ويبني من الأول |
 | `npm run build` | بناء الواجهة في `dist/` |
