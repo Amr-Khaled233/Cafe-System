@@ -15,6 +15,19 @@ import {
 
 const router = Router();
 
+/**
+ * بترجّع الفاتورة بشكل واحد ثابت مهما كانت العملية.
+ * مهم: لو رجّعنا الفاتورة الخام بعد الإضافة، الـ tableId بيرجع ObjectId مش
+ * كائن، والواجهة بتفقد أرقام الطاولات — وده كان بيخلي نافذة الدمج تعرض
+ * طاولة الفاتورة نفسها كأنها متاحة للدمج.
+ */
+async function populated(orderId) {
+  return Order.findById(orderId)
+    .populate('tableId', 'number name seats')
+    .populate('mergedTableIds', 'number name seats')
+    .lean();
+}
+
 /** الريسبشن يقدر يشوف أي فاتورة مفتوحة (بيخدم كل الطاولات)، بس المقفولة بتاعت شيفته بس */
 function canSee(order, user) {
   if (user.role === 'manager') return true;
@@ -64,7 +77,7 @@ router.get(
         .sort({ openedAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('tableId', 'number name area')
+        .populate('tableId', 'number name')
         .populate('userId', 'name')
         .lean(),
       Order.countDocuments(f),
@@ -78,7 +91,7 @@ router.get(
 router.get(
   '/:id',
   wrap(async (req, res) => {
-    const order = await Order.findById(req.params.id).populate('tableId', 'number name area').lean();
+    const order = await populated(req.params.id);
     if (!order) return fail(res, 'NOT_FOUND', 404);
     if (!canSee(order, req.user)) return fail(res, 'FORBIDDEN', 403);
     res.json(order);
@@ -105,16 +118,28 @@ router.post(
     if (!menuItem) return fail(res, 'MENU_ITEM_NOT_FOUND', 404);
     if (!menuItem.available) return fail(res, 'ITEM_UNAVAILABLE', 409);
 
+    // الصنف اللي ليه أنواع (سادة/مظبوط/زيادة) لازم يتحدد نوعه — الوصفة بتختلف
+    let variant = null;
+    if (menuItem.variants?.length) {
+      if (!oid(req.body?.variantId)) return fail(res, 'VARIANT_REQUIRED', 400);
+      variant = menuItem.variants.find((v) => String(v._id) === String(req.body.variantId));
+      if (!variant) return fail(res, 'VARIANT_NOT_FOUND', 404);
+      if (variant.available === false) return fail(res, 'VARIANT_UNAVAILABLE', 409);
+    } else if (req.body?.variantId) {
+      return fail(res, 'VARIANT_NOT_FOUND', 404);
+    }
+
     const { order: saved, shortages, duplicate } = await addItemWithStock({
       order,
       menuItem,
+      variant,
       qty,
       note: req.body?.note || '',
       clientRequestId: req.body?.clientRequestId,
       userId: req.user.id,
     });
 
-    res.status(duplicate ? 200 : 201).json({ order: saved, shortages, duplicate });
+    res.status(duplicate ? 200 : 201).json({ order: await populated(saved._id), shortages, duplicate });
   })
 );
 
@@ -136,7 +161,7 @@ router.patch(
       newQty: qty,
       userId: req.user.id,
     });
-    res.json({ order: saved, shortages });
+    res.json({ order: await populated(saved._id), shortages });
   })
 );
 
@@ -154,7 +179,105 @@ router.delete(
       itemId: req.params.itemId,
       userId: req.user.id,
     });
-    res.json({ order: saved });
+    res.json({ order: await populated(saved._id) });
+  })
+);
+
+/**
+ * POST /api/orders/:id/merge { tableIds: [...] }
+ * بيضم طاولات تانية على نفس الفاتورة — الحساب بيبقى عليهم كلهم سوا.
+ * لو الطاولة عليها فاتورة مفتوحة، أصنافها بتتنقل هنا وفاتورتها بتتقفل كـ merged.
+ * المخزون مابيتأثرش: الأصناف اتخصمت وقت إضافتها وهي بتتنقل زي ما هي.
+ */
+router.post(
+  '/:id/merge',
+  requireOpenShift,
+  wrap(async (req, res) => {
+    const order = await Order.findById(req.params.id);
+    if (!order) return fail(res, 'NOT_FOUND', 404);
+    if (order.status !== 'open') return fail(res, 'ORDER_NOT_OPEN', 409);
+
+    const ids = Array.isArray(req.body?.tableIds) ? req.body.tableIds : [];
+    if (!ids.length) return fail(res, 'NO_TABLES_SELECTED', 400);
+
+    const current = new Set([String(order.tableId), ...order.mergedTableIds.map(String)]);
+    const absorbed = [];
+
+    for (const raw of ids) {
+      const tid = oid(raw);
+      if (!tid) return fail(res, 'INVALID_TABLE', 400);
+      if (current.has(String(tid))) continue;
+
+      const table = await Table.findById(tid);
+      if (!table || !table.active) return fail(res, 'TABLE_NOT_FOUND', 404);
+
+      // الطاولة عليها فاتورة مفتوحة؟ ننقل أصنافها هنا
+      const other = await Order.findOne({
+        status: 'open',
+        _id: { $ne: order._id },
+        $or: [{ tableId: tid }, { mergedTableIds: tid }],
+      });
+
+      if (other) {
+        for (const item of other.items) order.items.push(item.toObject());
+        // كل طاولات الفاتورة التانية بتيجي معاها
+        for (const extra of [other.tableId, ...other.mergedTableIds]) {
+          if (!current.has(String(extra))) {
+            order.mergedTableIds.push(extra);
+            current.add(String(extra));
+          }
+        }
+        other.items = [];
+        other.status = 'merged';
+        other.mergedIntoId = order._id;
+        other.closedAt = new Date();
+        other.recalc();
+        await other.save();
+        absorbed.push(String(other._id));
+      } else {
+        order.mergedTableIds.push(tid);
+        current.add(String(tid));
+      }
+
+      table.status = 'busy';
+      await table.save();
+    }
+
+    order.recalc();
+    await order.save();
+
+    await audit({
+      userId: req.user.id,
+      action: 'order.merge',
+      entity: 'Order',
+      entityId: order._id,
+      after: { tables: [...current], absorbedOrders: absorbed },
+    });
+
+    res.json(await populated(order._id));
+  })
+);
+
+/** POST /api/orders/:id/unmerge { tableId } — بيشيل طاولة من الفاتورة وتفضى */
+router.post(
+  '/:id/unmerge',
+  requireOpenShift,
+  wrap(async (req, res) => {
+    const order = await Order.findById(req.params.id);
+    if (!order) return fail(res, 'NOT_FOUND', 404);
+    if (order.status !== 'open') return fail(res, 'ORDER_NOT_OPEN', 409);
+
+    const tid = oid(req.body?.tableId);
+    if (!tid) return fail(res, 'INVALID_TABLE', 400);
+    // الطاولة الأساسية ماتتشالش — هي أساس الفاتورة
+    if (String(order.tableId) === String(tid)) return fail(res, 'CANNOT_REMOVE_PRIMARY_TABLE', 400);
+    if (!order.mergedTableIds.some((x) => String(x) === String(tid))) return fail(res, 'TABLE_NOT_IN_ORDER', 404);
+
+    order.mergedTableIds = order.mergedTableIds.filter((x) => String(x) !== String(tid));
+    await order.save();
+    await Table.findByIdAndUpdate(tid, { status: 'free' });
+
+    res.json(await populated(order._id));
   })
 );
 
@@ -186,7 +309,7 @@ router.post(
       before,
       after: { discount: order.discount, total: order.total },
     });
-    res.json(order);
+    res.json(await populated(order._id));
   })
 );
 
@@ -212,7 +335,11 @@ router.post(
     order.shiftId = req.user.currentShiftId;
     await order.save();
 
-    await Table.findByIdAndUpdate(order.tableId, { status: 'free' });
+    // كل الطاولات اللي على الفاتورة بتفضى مع بعض
+    await Table.updateMany(
+      { _id: { $in: [order.tableId, ...order.mergedTableIds] } },
+      { status: 'free' }
+    );
     res.json(order);
   })
 );

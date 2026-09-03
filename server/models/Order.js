@@ -9,6 +9,10 @@ const OrderItemSchema = new mongoose.Schema({
   nameAr: { type: String, required: true },
   nameEn: { type: String, required: true },
   price: { type: Number, required: true, min: 0 },
+  // نوع الصنف وقت الطلب (سادة / مظبوط / زيادة) — الاسم متنسوخ زي السعر
+  variantId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  variantNameAr: { type: String, default: '' },
+  variantNameEn: { type: String, default: '' },
   qty: { type: Number, required: true, min: 1 },
   paidQty: { type: Number, default: 0 },
   stockApplied: { type: Boolean, default: false },
@@ -22,10 +26,16 @@ const OrderItemSchema = new mongoose.Schema({
 
 const OrderSchema = new mongoose.Schema(
   {
+    // الطاولة الأساسية للفاتورة
     tableId: { type: mongoose.Schema.Types.ObjectId, ref: 'Table', required: true },
+    // طاولات اتدمجت على نفس الفاتورة — الحساب بيبقى عليهم كلهم مع بعض
+    mergedTableIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Table' }], default: [] },
+    // لو الفاتورة دي اتدمجت جوّه فاتورة تانية، بنسجّل فين راحت
+    mergedIntoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
     shiftId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    status: { type: String, enum: ['open', 'paid', 'void'], default: 'open' },
+    // merged = اتدمجت في فاتورة تانية، فهي بره المبيعات زي الملغية بالظبط
+    status: { type: String, enum: ['open', 'paid', 'void', 'merged'], default: 'open' },
     items: { type: [OrderItemSchema], default: [] },
     subtotal: { type: Number, default: 0 },
     discount: {

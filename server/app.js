@@ -18,6 +18,9 @@ import inventoryRoutes from './routes/inventory.js';
 import stocktakeRoutes from './routes/stocktakes.js';
 import statsRoutes from './routes/stats.js';
 import reportRoutes from './routes/reports.js';
+import dailyRoutes from './routes/daily.js';
+import expenseRoutes from './routes/expenses.js';
+import workerRoutes from './routes/workers.js';
 import userRoutes from './routes/users.js';
 import auditRoutes from './routes/audit.js';
 
@@ -75,7 +78,11 @@ export function createApp() {
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/stocktakes', stocktakeRoutes);
   app.use('/api/stats', statsRoutes);
+  // الأخص قبل الأعم: /reports/daily لازم يتسجّل قبل /reports
+  app.use('/api/reports/daily', dailyRoutes);
   app.use('/api/reports', reportRoutes);
+  app.use('/api/expenses', expenseRoutes);
+  app.use('/api/workers', workerRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/audit', auditRoutes);
 

@@ -6,7 +6,7 @@ import { useI18n } from '../i18n/index.jsx';
  * العجز أحمر والزيادة أزرق.
  */
 export default function StocktakeRow({ line, ingredient, onCount, readOnly }) {
-  const { name, qty, money, num } = useI18n();
+  const { name, qty, money, numSigned } = useI18n();
 
   const counted = line.countedQty;
   const hasCount = counted !== null && counted !== undefined && counted !== '';
@@ -41,7 +41,7 @@ export default function StocktakeRow({ line, ingredient, onCount, readOnly }) {
       </td>
 
       <td className={`tabular-nums font-bold ${tone}`}>
-        {diff === null ? '—' : `${diff > 0 ? '+' : ''}${num(diff)}`}
+        {diff === null ? '—' : numSigned(diff)}
       </td>
       <td className={`tabular-nums ${tone}`}>
         {diff === null ? '—' : money(diff * (line.unitCost || ingredient?.costPerUnit || 0))}

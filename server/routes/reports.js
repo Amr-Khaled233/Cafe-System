@@ -173,7 +173,7 @@ async function consumption(query) {
   const openings = from
     ? await StockMovement.aggregate([
         { $match: { at: { $lt: from } } },
-        { $sort: { at: -1 } },
+        { $sort: { at: -1, _id: -1 } },
         { $group: { _id: '$ingredientId', balanceAfter: { $first: '$balanceAfter' } } },
       ])
     : [];
@@ -295,7 +295,7 @@ router.get(
         .sort({ closedAt: -1, openedAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('tableId', 'number name area')
+        .populate('tableId', 'number name')
         .populate('userId', 'name')
         .lean(),
       Order.countDocuments(f),

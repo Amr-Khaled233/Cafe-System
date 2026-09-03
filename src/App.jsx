@@ -17,6 +17,8 @@ import StocktakeDetail from './pages/StocktakeDetail.jsx';
 import Movements from './pages/Movements.jsx';
 import MenuAdmin from './pages/MenuAdmin.jsx';
 import Staff from './pages/Staff.jsx';
+import Expenses from './pages/Expenses.jsx';
+import Daily from './pages/Daily.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 
 function FullScreenLoader() {
@@ -79,6 +81,8 @@ export default function App() {
         <Route path="/movements" element={<RequireManager><Movements /></RequireManager>} />
         <Route path="/menu" element={<RequireManager><MenuAdmin /></RequireManager>} />
         <Route path="/staff" element={<RequireManager><Staff /></RequireManager>} />
+        <Route path="/daily" element={<RequireManager><Daily /></RequireManager>} />
+        <Route path="/expenses" element={<RequireManager><Expenses /></RequireManager>} />
         <Route path="/audit" element={<RequireManager><AuditLog /></RequireManager>} />
       </Route>
 

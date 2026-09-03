@@ -11,6 +11,21 @@ import { sendCSV } from '../utils/csv.js';
 const router = Router();
 router.use(managerOnly); // 🔒 المخزون كله للمدير بس
 
+/**
+ * بيتحقق من المكاييل (معلقة = 5 جم مثلاً).
+ * بيرجّع null لو فيه سطر بايظ عشان الراوت يرفض بكود واضح.
+ */
+function cleanMeasures(list) {
+  if (list === undefined) return undefined;
+  const out = [];
+  for (const m of Array.isArray(list) ? list : []) {
+    const factor = Number(m?.factor);
+    if (!m?.nameAr || !m?.nameEn || !Number.isFinite(factor) || factor <= 0) return null;
+    out.push({ nameAr: String(m.nameAr).trim(), nameEn: String(m.nameEn).trim(), factor });
+  }
+  return out;
+}
+
 /** GET /api/ingredients?status=low|out|all&q= — مرتّب بالأخطر الأول */
 router.get(
   '/',
@@ -50,6 +65,9 @@ router.post(
     if (!nameAr || !nameEn) return fail(res, 'MISSING_NAME', 400);
     if (!['g', 'ml', 'pc'].includes(unit)) return fail(res, 'INVALID_UNIT', 400);
 
+    const measures = cleanMeasures(req.body?.measures);
+    if (measures === null) return fail(res, 'INVALID_MEASURE', 400);
+
     const ing = await Ingredient.create({
       nameAr,
       nameEn,
@@ -57,6 +75,7 @@ router.post(
       currentQty: 0,
       minQty: Number(minQty) || 0,
       costPerUnit: Number(costPerUnit) || 0,
+      measures,
     });
 
     // أي رصيد ابتدائي بيدخل كحركة عشان يفضل مفسّر
@@ -104,6 +123,11 @@ router.patch(
         if (!Number.isFinite(n) || n < 0) return fail(res, 'INVALID_NUMBER', 400);
         patch[k] = n;
       }
+    }
+    if (req.body?.measures !== undefined) {
+      const measures = cleanMeasures(req.body.measures);
+      if (measures === null) return fail(res, 'INVALID_MEASURE', 400);
+      patch.measures = measures;
     }
 
     const ing = await Ingredient.findByIdAndUpdate(req.params.id, patch, { new: true });

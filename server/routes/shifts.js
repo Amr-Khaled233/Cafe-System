@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Shift from '../models/Shift.js';
+import Worker from '../models/Worker.js';
 import Order from '../models/Order.js';
 import { managerOnly } from '../middleware/auth.js';
 import { wrap, fail } from '../utils/errors.js';
@@ -8,6 +9,17 @@ import { oid } from '../filters.js';
 import { resolveRange } from '../utils/dates.js';
 
 const router = Router();
+
+/**
+ * بيحوّل قائمة معرّفات لعمّال بأسمائهم ووظايفهم منسوخة.
+ * النسخ مقصود: لو العامل اتشال أو اتغيّر اسمه بعدين، الشيفت القديم يفضل مفهوم.
+ */
+async function resolveWorkers(ids) {
+  const list = Array.isArray(ids) ? ids.map((x) => oid(x)).filter(Boolean) : [];
+  if (!list.length) return [];
+  const workers = await Worker.find({ _id: { $in: list }, active: true }).lean();
+  return workers.map((w) => ({ workerId: w._id, name: w.name, jobTitle: w.jobTitle }));
+}
 
 /**
  * ملخّص شيفت: عدد الفواتير، اللي اتحصّل، والتقسيم بطريقة الدفع.
@@ -53,8 +65,20 @@ router.post(
     const openingCash = Number(req.body?.openingCash ?? 0);
     if (!Number.isFinite(openingCash) || openingCash < 0) return fail(res, 'INVALID_CASH', 400);
 
-    const shift = await Shift.create({ userId: req.user.id, openingCash, startedAt: new Date() });
-    await audit({ userId: req.user.id, action: 'shift.open', entity: 'Shift', entityId: shift._id, after: shift });
+    const workers = await resolveWorkers(req.body?.workers);
+    const shift = await Shift.create({
+      userId: req.user.id,
+      openingCash,
+      startedAt: new Date(),
+      workers,
+    });
+    await audit({
+      userId: req.user.id,
+      action: 'shift.open',
+      entity: 'Shift',
+      entityId: shift._id,
+      after: { openingCash, workers: workers.map((w) => w.name) },
+    });
     res.status(201).json(shift);
   })
 );
@@ -90,6 +114,33 @@ router.post(
     });
 
     res.json({ shift, summary });
+  })
+);
+
+/**
+ * PATCH /api/shifts/current/workers { workers: [ids] }
+ * الريسبشن يقدر يعدّل مين موجود في شيفته وهو شغّال — حد جه متأخر أو مشي بدري.
+ */
+router.patch(
+  '/current/workers',
+  wrap(async (req, res) => {
+    const shift = await Shift.findOne({ userId: req.user.id, endedAt: null });
+    if (!shift) return fail(res, 'NO_OPEN_SHIFT', 409);
+
+    const before = shift.workers.map((w) => w.name);
+    shift.workers = await resolveWorkers(req.body?.workers);
+    await shift.save();
+
+    await audit({
+      userId: req.user.id,
+      action: 'shift.workers.update',
+      entity: 'Shift',
+      entityId: shift._id,
+      before: { workers: before },
+      after: { workers: shift.workers.map((w) => w.name) },
+    });
+
+    res.json({ shift, summary: await summarizeShift(shift) });
   })
 );
 

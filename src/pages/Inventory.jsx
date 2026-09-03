@@ -371,8 +371,8 @@ function MovementDialog({ state, busy, error, onClose, onSubmit }) {
 
 /** إضافة/تعديل خامة — الرصيد مش موجود هنا لأنه مايتعدّلش مباشرة */
 function IngredientDialog({ open, ingredient, busy, error, onClose, onSubmit }) {
-  const { t } = useI18n();
-  const [form, setForm] = useState({ nameAr: '', nameEn: '', unit: 'g', minQty: '', costPerUnit: '', openingQty: '' });
+  const { t, money2 } = useI18n();
+  const [form, setForm] = useState({ nameAr: '', nameEn: '', unit: 'g', minQty: '', costPerUnit: '', openingQty: '', measures: [] });
   const [initialised, setInitialised] = useState(false);
 
   if (open && !initialised) {
@@ -383,6 +383,7 @@ function IngredientDialog({ open, ingredient, busy, error, onClose, onSubmit }) 
       minQty: ingredient?.minQty ?? '',
       costPerUnit: ingredient?.costPerUnit ?? '',
       openingQty: '',
+      measures: (ingredient?.measures || []).map((m) => ({ nameAr: m.nameAr, nameEn: m.nameEn, factor: m.factor })),
     });
     setInitialised(true);
   }
@@ -412,6 +413,9 @@ function IngredientDialog({ open, ingredient, busy, error, onClose, onSubmit }) 
                 unit: form.unit,
                 minQty: Number(form.minQty || 0),
                 costPerUnit: Number(form.costPerUnit || 0),
+                measures: form.measures
+                  .filter((m) => m.nameAr && m.nameEn && Number(m.factor) > 0)
+                  .map((m) => ({ nameAr: m.nameAr, nameEn: m.nameEn, factor: Number(m.factor) })),
                 ...(ingredient ? {} : { openingQty: Number(form.openingQty || 0) }),
               })
             }
@@ -494,6 +498,77 @@ function IngredientDialog({ open, ingredient, busy, error, onClose, onSubmit }) 
               />
             </div>
           )}
+        </div>
+
+        {/* المكاييل: عشان الوصفة تتكتب «معلقة» بدل «5 جرام» */}
+        <div className="border-t border-line pt-3">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="label mb-0">{t('measures.title')}</span>
+            <button
+              type="button"
+              className="btn-ghost btn-sm"
+              onClick={() => set('measures', [...form.measures, { nameAr: '', nameEn: '', factor: '' }])}
+            >
+              {t('measures.add')}
+            </button>
+          </div>
+          <p className="mb-2 text-xs text-muted">
+            {t('measures.hint')} — {t('measures.example')}
+          </p>
+
+          {form.measures.length === 0 && <p className="text-xs text-muted">{t('measures.none')}</p>}
+
+          <div className="space-y-2">
+            {form.measures.map((m, i) => {
+              const setM = (patch) =>
+                set('measures', form.measures.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+              const factor = Number(m.factor) || 0;
+              return (
+                <div key={i} className="grid grid-cols-[1fr_1fr_90px_auto] gap-2">
+                  <input
+                    className="field"
+                    placeholder={t('common.nameAr')}
+                    value={m.nameAr}
+                    onChange={(e) => setM({ nameAr: e.target.value })}
+                  />
+                  <input
+                    className="field"
+                    placeholder={t('common.nameEn')}
+                    value={m.nameEn}
+                    onChange={(e) => setM({ nameEn: e.target.value })}
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="any"
+                    className="field tabular-nums"
+                    placeholder={t('units.' + form.unit)}
+                    value={m.factor}
+                    onChange={(e) => setM({ factor: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn-icon text-bad"
+                    aria-label={t('common.delete')}
+                    onClick={() => set('measures', form.measures.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                  {/* التكلفة بالمكيال — بتتحسب من تكلفة الوحدة، عشان تعرف المعلقة بكام */}
+                  {factor > 0 && Number(form.costPerUnit) > 0 && (
+                    <p className="col-span-4 -mt-1 text-[11px] text-muted">
+                      {t('measures.costPerMeasure')}:{' '}
+                      <span className="tabular-nums">
+                        {money2(Number(form.costPerUnit) * factor)}
+                      </span>{' '}
+                      {t('measures.perMeasure', { measure: m.nameAr || m.nameEn })}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {ingredient && <p className="text-xs text-muted">{t('inventory.directEditBlocked')}</p>}

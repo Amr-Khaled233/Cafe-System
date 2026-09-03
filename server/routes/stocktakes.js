@@ -31,7 +31,10 @@ router.post(
     // الرصيد الافتتاحي لكل الخامات: آخر حركة قبل بداية الفترة
     const openings = await StockMovement.aggregate([
       { $match: { at: { $lt: from } } },
-      { $sort: { at: -1 } },
+      // الترتيب لازم يكون بنفس ترتيب السجل (at ثم _id) — من غير الـ _id،
+      // لما كذا حركة تشترك في نفس اللحظة (أصناف فاتورة واحدة) الاختيار بيبقى عشوائي
+      // والرصيد الافتتاحي يطلع غلط.
+      { $sort: { at: -1, _id: -1 } },
       { $group: { _id: '$ingredientId', balanceAfter: { $first: '$balanceAfter' } } },
     ]);
     const openingById = Object.fromEntries(openings.map((o) => [String(o._id), o.balanceAfter]));

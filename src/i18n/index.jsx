@@ -37,6 +37,12 @@ export function I18nProvider({ children }) {
 
     const num = (n, o) => new Intl.NumberFormat(locale, o).format(Number(n) || 0);
 
+    /** رقم بإشارة (+/-) — Intl بيحط الإشارة في مكانها الصح حسب اتجاه اللغة */
+    const numSigned = (n) =>
+      new Intl.NumberFormat(locale, { signDisplay: 'exceptZero', maximumFractionDigits: 2 }).format(
+        Number(n) || 0
+      );
+
     const money = (n) =>
       new Intl.NumberFormat(locale, {
         style: 'currency',
@@ -58,8 +64,11 @@ export function I18nProvider({ children }) {
     const date = (d, o = { dateStyle: 'medium', timeStyle: 'short' }) =>
       d ? new Intl.DateTimeFormat(locale, o).format(new Date(d)) : '';
 
+    // النسبة من Intl نفسه (مش لصق '%' بإيدنا) عشان علامة النسبة تتحط في مكانها الصح في العربي
     const pct = (n) =>
-      new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(n) || 0) + '%';
+      new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(
+        (Number(n) || 0) / 100
+      );
 
     /** مدة بالدقايق → نص مقروء */
     const duration = (minutes) => {
@@ -78,7 +87,7 @@ export function I18nProvider({ children }) {
       return msg === 'errors.' + code ? t('errors.SERVER_ERROR') : msg;
     };
 
-    return { lang, setLang, dir, t, name, num, money, money2, qty, date, pct, duration, errorText, locale };
+    return { lang, setLang, dir, t, name, num, numSigned, money, money2, qty, date, pct, duration, errorText, locale };
   }, [lang, dir]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

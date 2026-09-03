@@ -17,7 +17,9 @@ function navItemsFor(role) {
   return [
     ...common,
     { to: '/dashboard', key: 'dashboard', icon: '◧' },
+    { to: '/daily', key: 'daily', icon: '▤' },
     { to: '/reports', key: 'reports', icon: '≣' },
+    { to: '/expenses', key: 'expenses', icon: '◇' },
     { to: '/inventory', key: 'inventory', icon: '▤' },
     { to: '/recipes', key: 'recipes', icon: '☕' },
     { to: '/stocktakes', key: 'stocktakes', icon: '✓' },

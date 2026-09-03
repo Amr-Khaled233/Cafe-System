@@ -14,7 +14,7 @@ const TYPE_CLASS = {
 };
 
 export default function Movements() {
-  const { t, name, money, qty, date, num } = useI18n();
+  const { t, name, money, qty, date, num, numSigned } = useI18n();
   const { query, get, set } = useFilters();
   const page = Number(get('page') || 1);
   const q = `?${query || 'range=last30'}`;
@@ -63,8 +63,9 @@ export default function Movements() {
                         <span className={TYPE_CLASS[m.type]}>{t(`movementTypes.${m.type}`)}</span>
                       </td>
                       <td className={`tabular-nums font-bold ${m.qty < 0 ? 'text-bad' : 'text-good'}`}>
-                        {m.qty > 0 ? '+' : ''}
-                        {qty(m.qty, m.ingredientId?.unit)}
+                        <span className="bidi-isolate">
+                          {numSigned(m.qty)} {t(`units.${m.ingredientId?.unit || 'g'}`)}
+                        </span>
                       </td>
                       <td className={`tabular-nums ${m.balanceAfter < 0 ? 'text-bad' : ''}`}>
                         {qty(m.balanceAfter, m.ingredientId?.unit)}

@@ -3,12 +3,16 @@ import { useI18n } from '../i18n/index.jsx';
 import { useApi, useAction } from '../hooks/useApi.js';
 import { api } from '../api/client.js';
 import { PageHeader } from '../components/Layout.jsx';
-import { EmptyState, ErrorState, InlineError, Modal, Skeleton, StatCard } from '../components/ui.jsx';
+import { EmptyState, ErrorState, InlineError, Modal, Skeleton, StatCard, useToast } from '../components/ui.jsx';
 
 export default function MyShift() {
   const { t, money, date, num } = useI18n();
   const { run, busy, error: actionError, clearError } = useAction();
   const { data, loading, error, reload } = useApi('/shifts/current');
+  const workers = useApi('/workers');
+  const { push } = useToast();
+  const [pickedWorkers, setPickedWorkers] = useState([]);
+  const [workersOpen, setWorkersOpen] = useState(false);
 
   const [openCash, setOpenCash] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
@@ -21,7 +25,7 @@ export default function MyShift() {
   const openShift = async () => {
     clearError();
     try {
-      await run(() => api.post('/shifts/open', { openingCash: Number(openCash || 0) }));
+      await run(() => api.post('/shifts/open', { openingCash: Number(openCash || 0), workers: pickedWorkers }));
       setOpenCash('');
       reload();
     } catch {
@@ -66,6 +70,16 @@ export default function MyShift() {
             value={openCash}
             onChange={(e) => setOpenCash(e.target.value)}
           />
+          <div className="mb-3">
+            <span className="label">{t('workers.pickForShift')}</span>
+            <p className="mb-2 text-xs text-muted">{t('workers.pickHint')}</p>
+            <WorkerPicker
+              workers={workers.data || []}
+              picked={pickedWorkers}
+              onChange={setPickedWorkers}
+            />
+          </div>
+
           <InlineError error={actionError} />
           <button type="button" className="btn-primary mt-3 w-full" onClick={openShift} disabled={busy}>
             {busy ? t('common.saving') : t('shift.open')}
@@ -89,6 +103,36 @@ export default function MyShift() {
         <StatCard label={t('shift.collected')} value={money(s.total)} />
         <StatCard label={t('shift.avgOrder')} value={money(s.avgOrder)} />
         <StatCard label={t('shift.itemsSold')} value={num(s.itemsCount)} />
+      </div>
+
+      {/* مين شغّال في الشيفت ده */}
+      <div className="card mb-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold">{t('workers.onShift')}</h2>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() => {
+              setPickedWorkers((shift.workers || []).map((w) => String(w.workerId)));
+              setWorkersOpen(true);
+            }}
+          >
+            {t('workers.editWorkers')}
+          </button>
+        </div>
+
+        {(shift.workers || []).length === 0 ? (
+          <p className="text-sm text-muted">{t('workers.noneSelected')}</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {shift.workers.map((w) => (
+              <span key={String(w.workerId)} className="chip">
+                {w.name}
+                <span className="text-muted">· {t(`jobTitles.${w.jobTitle || 'other'}`)}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -118,6 +162,42 @@ export default function MyShift() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={workersOpen}
+        onClose={() => setWorkersOpen(false)}
+        title={t('workers.pickForShift')}
+        footer={
+          <>
+            <button type="button" className="btn-ghost flex-1" onClick={() => setWorkersOpen(false)} disabled={busy}>
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn-primary flex-1"
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  await run(() => api.patch('/shifts/current/workers', { workers: pickedWorkers }));
+                  setWorkersOpen(false);
+                  push({ message: t('common.saved') });
+                  reload();
+                } catch {
+                  /* معروض في النافذة */
+                }
+              }}
+            >
+              {busy ? t('common.saving') : t('common.save')}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-muted">{t('workers.pickHint')}</p>
+          <WorkerPicker workers={workers.data || []} picked={pickedWorkers} onChange={setPickedWorkers} />
+          <InlineError error={actionError} />
+        </div>
+      </Modal>
 
       <Modal
         open={closeOpen}
@@ -166,6 +246,32 @@ export default function MyShift() {
           <InlineError error={actionError} />
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/** اختيار العمّال الموجودين في الشيفت */
+function WorkerPicker({ workers, picked, onChange }) {
+  const { t } = useI18n();
+  const toggle = (id) =>
+    onChange(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+
+  if (!workers.length) {
+    return <p className="rounded-xl bg-surface2 p-3 text-xs text-muted">{t('workers.emptyHint')}</p>;
+  }
+
+  return (
+    <div className="max-h-56 space-y-1 overflow-y-auto">
+      {workers.map((w) => (
+        <label
+          key={w._id}
+          className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-xl border border-line px-3"
+        >
+          <input type="checkbox" checked={picked.includes(String(w._id))} onChange={() => toggle(String(w._id))} />
+          <span className="flex-1 text-sm font-semibold">{w.name}</span>
+          <span className="text-xs text-muted">{t(`jobTitles.${w.jobTitle || 'other'}`)}</span>
+        </label>
+      ))}
     </div>
   );
 }

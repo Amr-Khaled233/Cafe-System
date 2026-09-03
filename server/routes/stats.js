@@ -287,7 +287,6 @@ router.get(
           tableId: '$_id',
           number: '$t.number',
           name: '$t.name',
-          area: '$t.area',
           sessions: 1,
           revenue: { $round: ['$revenue', 2] },
           avgMinutes: { $round: ['$avgMinutes', 0] },

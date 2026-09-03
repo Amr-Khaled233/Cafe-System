@@ -51,7 +51,7 @@ export default function FilterBar({ show = ['range'], className = '' }) {
   const cats = useApi('/categories', [], { skip: !has('category') && !has('item') });
   const menu = useApi('/menu', [], { skip: !has('item') });
   const ings = useApi('/ingredients', [], { skip: !has('ingredient') });
-  const tables = useApi('/tables', [], { skip: !has('table') && !has('area') });
+  const tables = useApi('/tables', [], { skip: !has('table') });
 
   const range = get('range') || (get('from') || get('to') ? 'custom' : '');
 
@@ -68,7 +68,6 @@ export default function FilterBar({ show = ['range'], className = '' }) {
     status: (v) => `${t('filters.status')}: ${t(`orderStatus.${v}`)}`,
     type: (v) => `${t('filters.movementType')}: ${t(`movementTypes.${v}`)}`,
     tableId: (v) => `${t('filters.table')}: ${tables.data?.find((x) => x._id === v)?.number || v}`,
-    area: (v) => `${t('filters.area')}: ${t(`areas.${v}`, {}) || v}`,
     q: (v) => `${t('filters.q')}: ${v}`,
     days: (v) => `${t('filters.days')}: ${v}`,
     sort: (v) => `${t('filters.sort')}: ${t(`reports.${v === 'qty' ? 'qtySold' : v === 'revenue' ? 'itemSales' : 'grossProfit'}`)}`,
@@ -199,16 +198,6 @@ export default function FilterBar({ show = ['range'], className = '' }) {
             {(tables.data || []).map((x) => (
               <option key={x._id} value={x._id}>
                 {t('tables.table')} {x.number}
-              </option>
-            ))}
-          </Select>
-        )}
-
-        {has('area') && (
-          <Select label={t('filters.area')} value={get('area')} onChange={(v) => set('area', v)}>
-            {[...new Set((tables.data || []).map((x) => x.area))].map((a) => (
-              <option key={a} value={a}>
-                {t(`areas.${a}`)}
               </option>
             ))}
           </Select>

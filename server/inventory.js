@@ -65,16 +65,17 @@ export async function applyMovement(
  * بيتأكد إن كل خامات الوصفة تكفي الكمية المطلوبة.
  * بيرجّع قائمة الناقص — فاضية يعني كله تمام.
  */
-export async function checkAvailability(menuItem, qty, session) {
-  if (!menuItem.trackStock || !menuItem.recipe?.length) return [];
+export async function checkAvailability(menuItem, qty, session, recipe) {
+  const lines = recipe || menuItem.recipe || [];
+  if (!menuItem.trackStock || !lines.length) return [];
 
-  const ids = menuItem.recipe.map((l) => l.ingredientId);
+  const ids = lines.map((l) => l.ingredientId);
   const q = Ingredient.find({ _id: { $in: ids } });
   const ings = await (session ? q.session(session) : q).lean();
   const byId = Object.fromEntries(ings.map((i) => [String(i._id), i]));
 
   const missing = [];
-  for (const line of menuItem.recipe) {
+  for (const line of lines) {
     const ing = byId[String(line.ingredientId)];
     const needed = line.qty * qty;
     if (!ing) continue;
@@ -140,7 +141,7 @@ export async function applyRecipe({ menuItem, recipe, qty, sign, refId, userId, 
  * ------------------------------------------------------------------ */
 
 /** إضافة صنف للفاتورة — الخصم بيحصل هنا لأن المشروب بيتعمل دلوقتي، مش وقت الدفع */
-export async function addItemWithStock({ order, menuItem, qty, note = '', clientRequestId, userId }) {
+export async function addItemWithStock({ order, menuItem, variant, qty, note = '', clientRequestId, userId }) {
   return withTx(async (session) => {
     // 🔒 نفس الريكوست اتبعت مرتين → بنرجّع الفاتورة زي ما هي من غير خصم تاني
     if (clientRequestId) {
@@ -148,9 +149,13 @@ export async function addItemWithStock({ order, menuItem, qty, note = '', client
       if (dup) return { order, shortages: [], duplicate: true };
     }
 
+    // النوع المختار (سادة/مظبوط/زيادة) بيحدد الوصفة والسعر
+    const effectiveRecipe = variant ? variant.recipe || [] : menuItem.recipe || [];
+    const effectivePrice = menuItem.price + (variant?.priceDelta || 0);
+
     // الوضع الصارم: نرفض الطلب أصلاً لو الخامة مش كافية
     if (blockWhenOutOfStock()) {
-      const missing = await checkAvailability(menuItem, qty, session);
+      const missing = await checkAvailability(menuItem, qty, session, effectiveRecipe);
       if (missing.length) {
         const err = new AppError('OUT_OF_STOCK', 409);
         err.details = missing;
@@ -160,7 +165,7 @@ export async function addItemWithStock({ order, menuItem, qty, note = '', client
 
     // نسخة الوصفة اللي هتتخصم — بتتخزّن مع السطر عشان الرد يبقى مطابق
     const snapshot = menuItem.trackStock
-      ? (menuItem.recipe || []).map((l) => ({ ingredientId: l.ingredientId, qty: l.qty }))
+      ? effectiveRecipe.map((l) => ({ ingredientId: l.ingredientId, qty: l.qty }))
       : [];
 
     const shortages = await applyRecipe(
@@ -172,7 +177,10 @@ export async function addItemWithStock({ order, menuItem, qty, note = '', client
       menuItemId: menuItem._id,
       nameAr: menuItem.nameAr,
       nameEn: menuItem.nameEn,
-      price: menuItem.price, // 📌 سعر لحظة الإضافة
+      price: effectivePrice, // 📌 سعر لحظة الإضافة، شامل فرق النوع
+      variantId: variant?._id || null,
+      variantNameAr: variant?.nameAr || '',
+      variantNameEn: variant?.nameEn || '',
       qty,
       paidQty: 0,
       stockApplied: true, // 🔒 يمنع الخصم مرتين لو السطر اتعالج تاني

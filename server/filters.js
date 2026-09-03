@@ -18,10 +18,12 @@ export async function buildOrderFilter(query = {}, user = {}, opts = {}) {
   const f = {};
 
   // حالة الفاتورة
-  if (query.status && ['open', 'paid', 'void'].includes(query.status)) {
+  if (query.status && ['open', 'paid', 'void', 'merged'].includes(query.status)) {
     f.status = query.status;
   } else if (!opts.includeVoid) {
-    f.status = { $ne: 'void' }; // 🔒 الملغي بره كل التقارير والمبيعات
+    // 🔒 الملغي والمدموج بره كل التقارير والمبيعات.
+    // المدموج أصنافه اتنقلت لفاتورة تانية، فلو عدّيناه هنعدّ نفس البيع مرتين.
+    f.status = { $nin: ['void', 'merged'] };
   }
 
   // الفترة — الفاتورة المفتوحة لسه مالهاش closedAt فبنفلتر على openedAt

@@ -21,6 +21,9 @@ export default function Staff() {
   const { query } = useFilters();
 
   const users = useApi('/users');
+  const workers = useApi('/workers?active=all');
+  const [workerDialog, setWorkerDialog] = useState(null);
+  const [disableWorker, setDisableWorker] = useState(null);
   const shifts = useApi(`/shifts${query ? `?${query}` : '?range=last30'}`, [query]);
 
   const [dialog, setDialog] = useState(null);
@@ -94,6 +97,74 @@ export default function Staff() {
         )}
       </div>
 
+      {/* ---------- العمّال: بيعملوا المشاريب ومالهمش دخول للنظام ---------- */}
+      <div className="card">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold">{t('workers.title')}</h2>
+            <p className="text-xs text-muted">{t('workers.subtitle')}</p>
+          </div>
+          <button type="button" className="btn-primary btn-sm" onClick={() => setWorkerDialog({})}>
+            {t('workers.add')}
+          </button>
+        </div>
+
+        {workers.loading && <SkeletonTable rows={4} cols={5} />}
+        {!workers.loading && workers.data?.length === 0 && (
+          <EmptyState icon="C" title={t('workers.empty')} hint={t('workers.emptyHint')} />
+        )}
+
+        {!workers.loading && workers.data?.length > 0 && (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="sticky-col">{t('workers.name')}</th>
+                  <th>{t('workers.jobTitle')}</th>
+                  <th>{t('workers.phone')}</th>
+                  <th>{t('common.status')}</th>
+                  <th>{t('workers.shiftsCount')}</th>
+                  <th>{t('workers.lastShift')}</th>
+                  <th>{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workers.data.map((w) => (
+                  <tr key={w._id} className={w.active ? '' : 'opacity-60'}>
+                    <td className="sticky-col font-semibold">{w.name}</td>
+                    <td>{t('jobTitles.' + (w.jobTitle || 'other'))}</td>
+                    <td className="tabular-nums text-muted">{w.phone || '—'}</td>
+                    <td>
+                      <span className={w.active ? 'badge-ok' : 'badge-out'}>
+                        {t(w.active ? 'staff.active' : 'staff.disabled')}
+                      </span>
+                    </td>
+                    <td className="tabular-nums">{num(w.shiftsCount || 0)}</td>
+                    <td className="text-muted">{w.lastShiftAt ? date(w.lastShiftAt) : '—'}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => setWorkerDialog(w)}>
+                          {t('common.edit')}
+                        </button>
+                        {w.active && (
+                          <button
+                            type="button"
+                            className="btn-ghost btn-sm text-bad"
+                            onClick={() => setDisableWorker(w)}
+                          >
+                            {t('staff.disabled')}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* ---------- سجل الشيفتات ---------- */}
       <div className="card">
         <h2 className="mb-3 text-sm font-bold">{t('staff.shiftsHistory')}</h2>
@@ -115,6 +186,7 @@ export default function Staff() {
                   <th>{t('shift.expectedCash')}</th>
                   <th>{t('shift.closingCash')}</th>
                   <th>{t('shift.difference')}</th>
+                  <th>{t('workers.inShift')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,6 +205,11 @@ export default function Staff() {
                       }`}
                     >
                       {s.difference === null ? '—' : money(s.difference)}
+                    </td>
+                    <td className="max-w-[220px] truncate text-muted">
+                      {(s.workers || []).length
+                        ? s.workers.map((w) => w.name).join(t('common.listSeparator'))
+                        : '—'}
                     </td>
                   </tr>
                 ))}
@@ -163,6 +240,43 @@ export default function Staff() {
         }}
       />
 
+      <WorkerDialog
+        worker={workerDialog}
+        busy={busy}
+        error={actionError}
+        onClose={() => {
+          setWorkerDialog(null);
+          clearError();
+        }}
+        onSubmit={async (body) => {
+          try {
+            if (workerDialog?._id) await run(() => api.patch('/workers/' + workerDialog._id, body));
+            else await run(() => api.post('/workers', body));
+            push({ message: t('common.saved') });
+            setWorkerDialog(null);
+            workers.reload();
+          } catch {
+            /* meaayn fy alnafdha */
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!disableWorker}
+        message={t('workers.disableConfirm', { name: disableWorker?.name || '' })}
+        busy={busy}
+        onCancel={() => setDisableWorker(null)}
+        onConfirm={async () => {
+          try {
+            await run(() => api.patch('/workers/' + disableWorker._id, { active: false }));
+            setDisableWorker(null);
+            workers.reload();
+          } catch {
+            setDisableWorker(null);
+          }
+        }}
+      />
+
       <ConfirmDialog
         open={!!disableFor}
         message={t('staff.disableConfirm', { name: disableFor?.name || '' })}
@@ -179,6 +293,69 @@ export default function Staff() {
         }}
       />
     </div>
+  );
+}
+
+/** نافذة إضافة/تعديل عامل — مالوش حساب دخول، اسم ووظيفة وتليفون بس */
+function WorkerDialog({ worker, busy, error, onClose, onSubmit }) {
+  const { t } = useI18n();
+  const [form, setForm] = useState(null);
+
+  if (worker && !form) {
+    setForm({
+      name: worker.name || '',
+      jobTitle: worker.jobTitle || 'barista',
+      phone: worker.phone || '',
+    });
+  }
+  if (!worker && form) setForm(null);
+  if (!worker || !form) return null;
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={worker._id ? t('workers.edit') : t('workers.add')}
+      footer={
+        <>
+          <button type="button" className="btn-ghost flex-1" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn-primary flex-1"
+            disabled={busy || !form.name.trim()}
+            onClick={() => onSubmit(form)}
+          >
+            {busy ? t('common.saving') : t('common.save')}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <label className="label" htmlFor="wn">{t('workers.name')}</label>
+          <input id="wn" className="field" value={form.name} onChange={(e) => set('name', e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="wj">{t('workers.jobTitle')}</label>
+          <select id="wj" className="field" value={form.jobTitle} onChange={(e) => set('jobTitle', e.target.value)}>
+            {['barista', 'kitchen', 'waiter', 'cashier', 'other'].map((j) => (
+              <option key={j} value={j}>
+                {t('jobTitles.' + j)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="wp">{t('workers.phone')}</label>
+          <input id="wp" className="field tabular-nums" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+        </div>
+        <InlineError error={error} />
+      </div>
+    </Modal>
   );
 }
 

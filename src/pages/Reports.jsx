@@ -38,7 +38,7 @@ export default function Reports() {
           tab === 'consumption'
             ? ['range', 'ingredient']
             : tab === 'ordersReport'
-            ? ['range', 'staff', 'paymentMethod', 'status', 'table', 'area', 'q']
+            ? ['range', 'staff', 'paymentMethod', 'status', 'table', 'q']
             : ['range', 'category', 'item', 'staff', 'q']
         }
       />
