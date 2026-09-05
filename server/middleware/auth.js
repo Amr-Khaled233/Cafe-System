@@ -21,7 +21,9 @@ export const TOKEN_TTL_SEC = HOURS * 60 * 60;
 
 export function signToken(user) {
   return jwt.sign(
-    { id: String(user._id), role: user.role, name: user.name },
+    // v = نسخة التوكن. لو الباسورد اتغيّر أو المدير عمل «خروج من كل الأجهزة»،
+    // النسخة بتزيد والتوكنات القديمة بتبقى غير صالحة على طول.
+    { id: String(user._id), role: user.role, name: user.name, v: user.tokenVersion || 0 },
     process.env.JWT_SECRET,
     { expiresIn: TOKEN_TTL_SEC, algorithm: ALG }
   );
@@ -61,12 +63,19 @@ export async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Account disabled', code: 'ACCOUNT_DISABLED' });
   }
 
+  // 🔒 الجلسة اتلغت (تغيير باسورد أو خروج من كل الأجهزة)
+  if ((payload.v || 0) !== (user.tokenVersion || 0)) {
+    res.clearCookie('token', { ...cookieOptions(), maxAge: undefined });
+    return res.status(401).json({ error: 'Session revoked', code: 'SESSION_REVOKED' });
+  }
+
   const shift = await Shift.findOne({ userId: user._id, endedAt: null }).sort({ startedAt: -1 }).lean();
 
   req.user = {
     id: String(user._id),
     name: user.name,
     role: user.role,
+    email: user.email || null,
     currentShiftId: shift ? String(shift._id) : null,
   };
 

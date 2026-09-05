@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { InlineError } from '../components/ui.jsx';
@@ -83,6 +83,10 @@ export default function Login() {
           <button type="submit" className="btn-primary" disabled={busy}>
             {busy ? t('auth.signingIn') : t('auth.signIn')}
           </button>
+
+          <Link to="/forgot-password" className="text-center text-xs text-accent underline">
+            {t('reset.forgot')}
+          </Link>
         </form>
       </div>
     </div>

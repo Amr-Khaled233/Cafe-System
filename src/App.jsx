@@ -5,6 +5,8 @@ import Layout from './components/Layout.jsx';
 import { EmptyState } from './components/ui.jsx';
 
 import Login from './pages/Login.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import Tables from './pages/Tables.jsx';
 import OrderScreen from './pages/OrderScreen.jsx';
 import MyShift from './pages/MyShift.jsx';
@@ -54,6 +56,10 @@ export default function App() {
 
   return (
     <Routes>
+      {/* الصفحتين دول بره الحماية — الموظف اللي نسي باسورده مش داخل أصلاً */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+
       <Route
         path="/login"
         element={loading ? <FullScreenLoader /> : user ? <Navigate to="/tables" replace /> : <Login />}

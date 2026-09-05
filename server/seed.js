@@ -146,6 +146,7 @@ async function main() {
   const manager = await User.create({
     name: 'أحمد المدير',
     username: (process.env.SEED_MANAGER_USERNAME || 'manager').toLowerCase(),
+    email: process.env.SEED_MANAGER_EMAIL || null,
     passwordHash: await bcrypt.hash(process.env.SEED_MANAGER_PASSWORD || 'manager123', 10),
     role: 'manager',
   });

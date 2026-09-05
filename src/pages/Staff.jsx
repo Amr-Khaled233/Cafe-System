@@ -21,6 +21,8 @@ export default function Staff() {
   const { query } = useFilters();
 
   const users = useApi('/users');
+  const emailStatus = useApi('/users/email-status');
+  const [revokeFor, setRevokeFor] = useState(null);
   const workers = useApi('/workers?active=all');
   const [workerDialog, setWorkerDialog] = useState(null);
   const [disableWorker, setDisableWorker] = useState(null);
@@ -39,6 +41,12 @@ export default function Staff() {
 
       <InlineError error={actionError} />
 
+      {emailStatus.data && !emailStatus.data.configured && (
+        <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs font-semibold text-warn">
+          {t('staff.emailNotSetUp')}
+        </p>
+      )}
+
       {/* ---------- الحسابات ---------- */}
       <div className="card">
         {users.loading && <SkeletonTable rows={4} cols={5} />}
@@ -51,10 +59,11 @@ export default function Staff() {
                 <tr>
                   <th className="sticky-col">{t('common.name')}</th>
                   <th>{t('auth.username')}</th>
+                  <th>{t('staff.email')}</th>
                   <th>{t('staff.role')}</th>
                   <th>{t('common.status')}</th>
                   <th>{t('staff.shiftsCount')}</th>
-                  <th>{t('staff.lastShift')}</th>
+                  <th>{t('staff.lastLogin')}</th>
                   <th>{t('common.actions')}</th>
                 </tr>
               </thead>
@@ -63,6 +72,9 @@ export default function Staff() {
                   <tr key={u._id} className={u.active ? '' : 'opacity-60'}>
                     <td className="sticky-col font-semibold">{u.name}</td>
                     <td className="font-mono text-xs">{u.username}</td>
+                    <td className="text-xs" dir="ltr">
+                      {u.email || <span className="text-muted">{t('staff.noEmail')}</span>}
+                    </td>
                     <td>
                       <span className={u.role === 'manager' ? 'badge-info' : 'badge'}>{t(`roles.${u.role}`)}</span>
                     </td>
@@ -72,12 +84,38 @@ export default function Staff() {
                       </span>
                     </td>
                     <td className="tabular-nums">{num(u.shiftsCount)}</td>
-                    <td className="text-muted">{u.lastShiftAt ? date(u.lastShiftAt) : '—'}</td>
+                    <td className="text-muted">{u.lastLoginAt ? date(u.lastLoginAt) : '—'}</td>
                     <td>
                       <div className="flex gap-1">
                         <button type="button" className="btn-ghost btn-sm" onClick={() => setDialog(u)}>
                           {t('common.edit')}
                         </button>
+
+                        {/* المدير بيبعت رابط بدل ما يعرف باسورد الموظف */}
+                        {u.active && u.email && emailStatus.data?.configured && (
+                          <button
+                            type="button"
+                            className="btn-ghost btn-sm"
+                            disabled={busy}
+                            onClick={async () => {
+                              try {
+                                await run(() => api.post('/users/' + u._id + '/send-reset'));
+                                push({ message: t('staff.resetSent', { email: u.email }) });
+                              } catch {
+                                /* الخطأ بيبان فوق الجدول */
+                              }
+                            }}
+                          >
+                            {t('staff.sendResetShort')}
+                          </button>
+                        )}
+
+                        {u.active && (
+                          <button type="button" className="btn-ghost btn-sm" onClick={() => setRevokeFor(u)}>
+                            {t('staff.revokeShort')}
+                          </button>
+                        )}
+
                         {u.active && (
                           <button
                             type="button"
@@ -262,6 +300,24 @@ export default function Staff() {
       />
 
       <ConfirmDialog
+        open={!!revokeFor}
+        message={t('staff.revokeConfirm', { name: revokeFor?.name || '' })}
+        confirmLabel={t('staff.revokeSessions')}
+        busy={busy}
+        onCancel={() => setRevokeFor(null)}
+        onConfirm={async () => {
+          try {
+            await run(() => api.post('/users/' + revokeFor._id + '/revoke-sessions'));
+            push({ message: t('staff.revoked') });
+            setRevokeFor(null);
+            users.reload();
+          } catch {
+            setRevokeFor(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
         open={!!disableWorker}
         message={t('workers.disableConfirm', { name: disableWorker?.name || '' })}
         busy={busy}
@@ -367,6 +423,7 @@ function UserDialog({ user, busy, error, onClose, onSubmit }) {
     setForm({
       name: user.name || '',
       username: user.username || '',
+      email: user.email || '',
       password: '',
       role: user.role || 'reception',
       active: user.active !== false,
@@ -397,11 +454,18 @@ function UserDialog({ user, busy, error, onClose, onSubmit }) {
                 editing
                   ? {
                       name: form.name,
+                      email: form.email,
                       role: form.role,
                       active: form.active,
                       ...(form.password ? { password: form.password } : {}),
                     }
-                  : { name: form.name, username: form.username, password: form.password, role: form.role }
+                  : {
+                      name: form.name,
+                      username: form.username,
+                      email: form.email,
+                      password: form.password,
+                      role: form.role,
+                    }
               )
             }
           >
@@ -432,6 +496,22 @@ function UserDialog({ user, busy, error, onClose, onSubmit }) {
             />
           </div>
         )}
+
+        <div>
+          <label className="label" htmlFor="ue">
+            {t('staff.email')}
+          </label>
+          <input
+            id="ue"
+            type="email"
+            className="field"
+            dir="ltr"
+            autoCapitalize="none"
+            value={form.email}
+            onChange={(e) => set('email', e.target.value)}
+          />
+          <p className="mt-1 text-xs text-muted">{t('staff.emailHint')}</p>
+        </div>
 
         <div>
           <label className="label" htmlFor="up">

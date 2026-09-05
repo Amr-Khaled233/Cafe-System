@@ -6,9 +6,20 @@ import { managerOnly } from '../middleware/auth.js';
 import { wrap, fail } from '../utils/errors.js';
 import { audit } from '../utils/audit.js';
 import { rx } from '../filters.js';
+import { isEmailConfigured, resetPasswordEmail, sendMail } from '../utils/mailer.js';
+import { createResetToken, RESET_TTL_MINUTES, resetLink } from '../utils/resetToken.js';
+
+/** إيميل بسيط الشكل — التحقق الحقيقي بيحصل لما الرسالة توصل فعلاً */
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const router = Router();
 router.use(managerOnly); // 🔒 إدارة الحسابات للمدير بس
+
+/** GET /api/users/email-status (مدير) — الإيميل متظبط ولا لأ */
+router.get(
+  '/email-status',
+  wrap(async (req, res) => res.json({ configured: isEmailConfigured() }))
+);
 
 /** GET /api/users */
 router.get(
@@ -55,12 +66,17 @@ router.post(
     if (password.length < 6) return fail(res, 'PASSWORD_TOO_SHORT', 400);
     if (!['reception', 'manager'].includes(role)) return fail(res, 'INVALID_ROLE', 400);
 
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (email && !EMAIL_RX.test(email)) return fail(res, 'INVALID_EMAIL', 400);
+
     const exists = await User.findOne({ username });
     if (exists) return fail(res, 'USERNAME_TAKEN', 409);
+    if (email && (await User.findOne({ email }))) return fail(res, 'EMAIL_TAKEN', 409);
 
     const user = await User.create({
       name,
       username,
+      email: email || null,
       role,
       passwordHash: await bcrypt.hash(password, 10),
     });
@@ -73,7 +89,7 @@ router.post(
       after: { name, username, role },
     });
 
-    res.status(201).json({ _id: user._id, name, username, role, active: true });
+    res.status(201).json({ _id: user._id, name, username, email: user.email, role, active: true });
   })
 );
 
@@ -100,9 +116,21 @@ router.patch(
       patch.active = !!req.body.active;
     }
 
+    if (req.body?.email !== undefined) {
+      const email = String(req.body.email || '').trim().toLowerCase();
+      if (email && !EMAIL_RX.test(email)) return fail(res, 'INVALID_EMAIL', 400);
+      if (email) {
+        const clash = await User.findOne({ email, _id: { $ne: before._id } });
+        if (clash) return fail(res, 'EMAIL_TAKEN', 409);
+      }
+      patch.email = email || null;
+    }
+
     if (req.body?.password) {
       if (String(req.body.password).length < 6) return fail(res, 'PASSWORD_TOO_SHORT', 400);
       patch.passwordHash = await bcrypt.hash(String(req.body.password), 10);
+      // 🔒 تغيير الباسورد بيقفل كل الجلسات المفتوحة للحساب ده
+      patch.tokenVersion = (before.tokenVersion || 0) + 1;
     }
 
     // آخر مدير نشط لازم يفضل موجود
@@ -125,5 +153,80 @@ router.patch(
     res.json(user);
   })
 );
+
+/**
+ * POST /api/users/:id/send-reset (مدير)
+ * المدير بيبعت للموظف رابط يغيّر بيه باسورده بنفسه — أنضف من إن المدير
+ * يعرف باسورد حد.
+ */
+router.post(
+  '/:id/send-reset',
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('+resetTokenHash +resetTokenExpiresAt');
+    if (!user) return fail(res, 'NOT_FOUND', 404);
+    if (!user.active) return fail(res, 'ACCOUNT_DISABLED', 409);
+    if (!user.email) return fail(res, 'USER_HAS_NO_EMAIL', 400);
+    if (!isEmailConfigured()) return fail(res, 'EMAIL_NOT_CONFIGURED', 503);
+
+    const { token, hash, expiresAt } = createResetToken();
+    user.resetTokenHash = hash;
+    user.resetTokenExpiresAt = expiresAt;
+    await user.save();
+
+    const link = resetLink(req, token);
+    const mail = resetPasswordEmail({ name: user.name, link, minutes: RESET_TTL_MINUTES });
+
+    try {
+      await sendMail({ to: user.email, ...mail });
+    } catch (e) {
+      // مانسيبش توكن شغّال ومحدش استلمه
+      user.resetTokenHash = null;
+      user.resetTokenExpiresAt = null;
+      await user.save();
+      console.error('[mail] manager reset send failed:', e.message);
+      return fail(res, 'EMAIL_SEND_FAILED', 502);
+    }
+
+    await audit({
+      userId: req.user.id,
+      action: 'user.sendReset',
+      entity: 'User',
+      entityId: user._id,
+      after: { to: user.email, expiresAt },
+    });
+
+    res.json({ ok: true, expiresAt });
+  })
+);
+
+/**
+ * POST /api/users/:id/revoke-sessions (مدير)
+ * بيقفل كل جلسات الموظف على كل الأجهزة فوراً — من غير ما يستنى التوكن يخلص.
+ */
+router.post(
+  '/:id/revoke-sessions',
+  wrap(async (req, res) => {
+    const before = await User.findById(req.params.id).lean();
+    if (!before) return fail(res, 'NOT_FOUND', 404);
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { tokenVersion: 1 } },
+      { new: true }
+    ).lean();
+
+    await audit({
+      userId: req.user.id,
+      action: 'user.revokeSessions',
+      entity: 'User',
+      entityId: user._id,
+      before: { tokenVersion: before.tokenVersion || 0 },
+      after: { tokenVersion: user.tokenVersion },
+    });
+
+    res.json({ ok: true, tokenVersion: user.tokenVersion });
+  })
+);
+
 
 export default router;
